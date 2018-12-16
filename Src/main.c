@@ -137,7 +137,7 @@ int main(void)
   HAL_ADC_Start_DMA (&hadc1, (uint32_t *) rawValue, 7);
   HAL_TIM_Base_Init(&htim2); //Timer principale : ad ogni overflow elaboriamo i dati dai sensori
   HAL_TIM_Base_Start_IT(&htim2);
-  HAL_TIM_PWM_Start(&htim10,TIM_CHANNEL_1); // Timer in PW Mode per il motore
+  HAL_TIM_PWM_Start(&htim10,TIM_CHANNEL_1); // Timer PWM per il motore
 
   /* USER CODE BEGIN 2 */
 
