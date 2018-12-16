@@ -83,7 +83,7 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 
 /* USER CODE BEGIN 0 */
 uint32_t rawValue[7];
-uint32_t flex_center, flex_leg_sx, flex_leg_dx, right, up, down, left;
+uint32_t flex_center, flex_leg_sx, flex_leg_dx, right, up, down, left;	// Sensori
 long int  perc , u_diff, d_diff, dx_diff, sx_diff, lateral_unb, frontal_unb, u_diff_ref, d_diff_ref,dx_diff_ref, sx_diff_ref;
 uint32_t l_tresh = 300;
 uint32_t h_tresh = 600;
@@ -154,18 +154,21 @@ int main(void)
 
   /* USER CODE BEGIN 3 */
 	  switch(state){
+	  // Postura corretta : viene acceso il LED verde
 		  case 0:
 			  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
 			  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
 			  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, GPIO_PIN_RESET);
 			  __HAL_TIM_SET_COMPARE(&htim10,TIM_CHANNEL_1,0);
 			  break;
+	 // Postura intermedia : viene aceso il LED giallo
 		  case 1:
 			  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
 			  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
 			  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, GPIO_PIN_RESET);
 			  __HAL_TIM_SET_COMPARE(&htim10,TIM_CHANNEL_1,0);
 			  break;
+	 // Postura scorretta : viene acceso il LED rosso e attivato il motore
 		  case 2:
 			  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
 			  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
@@ -173,7 +176,7 @@ int main(void)
 			  float fflex_leg_sx = (float)flex_leg_sx;
 			  float fflex_leg_dx = (float)flex_leg_dx;
 			  // Se la postura è scorretta il motore viene attivato per riportare il
-			  // pad in posizione centrale
+			  // pad in posizione centrale settando il dutycycle al 7.5%
 			  if(flag_motore==1){
 				  __HAL_TIM_SET_COMPARE(&htim10,TIM_CHANNEL_1,23);
 			  }
@@ -211,6 +214,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef*htim){
 		float fflex_leg_dx = (float)flex_leg_dx;
 		fflex_leg_sx=fflex_leg_sx-offset_sinistra;
 		fflex_leg_dx=fflex_leg_dx-offset_destra;
+		// Per i primi 12*0.5 secondi dopo l'accensione (quando non vi è seduto nessuno)
+		// calcoliamo l'offset da sottrarre al valore ricevuto dai sensori di flessione
+		// per essere sicuro che sia 0 quando i sensori non sono piegati e diverso da 0
+		// nel caso contrario
 		if(flag<12){
 			flag++;
 		}else if(flag==12){
@@ -218,15 +225,20 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef*htim){
 			offset_destra=fflex_leg_dx;
 			offset_sinistra=fflex_leg_sx;
 		}
+		// Cast a float dei valori
 		fright = (float)right;
 		fleft = (float)left;
 		fup = (float)up;
 		fdown = (float)down;
+		// Calcoliamo il rapporto tra i valori dei sensori, da cui ricaveremo le coordinate
+		// del baricentro
 		ratio_up = fup/fdown;
 		ratio_down = fdown/fup;
 		ratio_right = fright/fleft;
 		ratio_left = fleft/fright;
 
+		// Calcoliamo le coordinate del baricentro : la funzione quindi modicficherà le
+		// variabili globali x_index e y_index (che sono appunto le coordinate del baricentro)
 		setCoordinate(ratio_up,ratio_down,ratio_left,ratio_right);
 
 		/*sprintf(msg, "avanti: %Ld\r\n",up);
@@ -241,20 +253,37 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef*htim){
 		sprintf(msg, "sinistra: %Ld\r\n",left);
 		HAL_UART_Transmit(&huart2, (uint8_t*) msg, strlen(msg), HAL_MAX_DELAY);*/
 
+		// Baricentro sbilanciato troppo a destra o sinistra : la variabile flag_motore
+		// farà attivare il motore nel while
 		if((x_index < -15 ) ||(x_index>15) ){
 			flag_motore=1;
 		}
 		else{
 			flag_motore=0;
 		}
+		// Baricentro nella zona rossa : posizione scorretta quindi la variabile di stato è 2
+		// e verrà accesso il LED rosso
 		if((x_index < -15 ) ||(x_index>15) || (y_index > 20 ) || fflex_leg_dx<FLEX_DESTRA_TH || fflex_leg_sx<FLEX_SINISTRA_TH){
 			state = 2;
-		}else if((x_index > -15 && x_index < -5) || ((x_index > 5 && x_index < 15)) || (y_index > 5 && y_index<20)){
+		}
+		// Baricentro nella zona gialla : posizione intermedia quindi la variabile di stato è 1
+		// e verrà accesso il LED giallo
+		else if((x_index > -15 && x_index < -5) || ((x_index > 5 && x_index < 15)) || (y_index > 5 && y_index<20)){
 			state = 1;
-		}else{
+		}
+		// Baricentro nella zona verde : posizione corretta
+		// verrà accesso il LED verde
+		else{
 			state = 0;
 		}
+
+		// Le coordinate e i valori dei sensori di flessione vengono passati a getPosizione
+		// che stimerà la posizione assunta e assegnerà il rispettivo valore alla variabile
+		// globale posizione
 		posizione=getPosizione(x_index,y_index,fflex_leg_dx,fflex_leg_sx);
+
+		// I 4 valori dei sensori di peso e l'ID della posizione vengono messi in un vettore
+		// e inviati con l'UART
 		data[0]=up;
 		data[1]=down;
 		data[2]=left;
@@ -274,6 +303,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef*htim){
 		sprintf(msg, "ratio_down: %.7f\r\n",ratio_down);
 		HAL_UART_Transmit(&huart2, (uint8_t*) msg, strlen(msg), HAL_MAX_DELAY);*/
 
+		// DEBUG
 		sprintf(msg, "------------------------------------------------\r\n");
 		HAL_UART_Transmit(&huart2, (uint8_t*) msg, strlen(msg), HAL_MAX_DELAY);
 
@@ -305,6 +335,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef*htim){
 	}
 }
 
+// Calcola le coordinate x e y del baricentro. I valori vanno da -250 a 250 (max_value)
 void setCoordinate(float ratio_up,float ratio_down,float ratio_left,float ratio_right){
 	// CALCOLO ORDINATA
 	if(ratio_up >= ratio_down){
@@ -341,6 +372,8 @@ void setCoordinate(float ratio_up,float ratio_down,float ratio_left,float ratio_
 
 }
 
+// Calcolo l'ID della posizione stimata. E' la somma di due interi : una cifra associata alla
+// zona del barientro ed una per la posizione delle gambe
 uint32_t getPosizione(float x,float y,float gamba_destra,float gamba_sinistra){
 	uint32_t zona,gambe;
 	// Controllo della Zona
