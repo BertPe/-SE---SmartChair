@@ -135,9 +135,9 @@ int main(void)
   MX_USART6_UART_Init();
   // DMA : i valori dei 6 sensori saranno disponibili nel vettore rawValue
   HAL_ADC_Start_DMA (&hadc1, (uint32_t *) rawValue, 7);
-  HAL_TIM_Base_Init(&htim2); //Configure the timer
+  HAL_TIM_Base_Init(&htim2); //Timer principale : ad ogni overflow elaboriamo i dati dai sensori
   HAL_TIM_Base_Start_IT(&htim2);
-  HAL_TIM_PWM_Start(&htim10,TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim10,TIM_CHANNEL_1); // Timer in PW Mode per il motore
 
   /* USER CODE BEGIN 2 */
 
@@ -145,7 +145,8 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  // Nel while viene acceso un led diverso in base al valore della variabile di stato.
+
+  // Viene acceso un led diverso in base al valore della variabile di stato.
   // La variabile di stato viene calcolata nella callback dell'interruzione del Timer 2
   while (1)
   {
@@ -154,14 +155,14 @@ int main(void)
 
   /* USER CODE BEGIN 3 */
 	  switch(state){
-	  // Postura corretta : viene acceso il LED verde
+	  // Postura corretta : viene acceso il LED verde ed il motore non viene attivato
 		  case 0:
 			  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
 			  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
 			  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, GPIO_PIN_RESET);
 			  __HAL_TIM_SET_COMPARE(&htim10,TIM_CHANNEL_1,0);
 			  break;
-	 // Postura intermedia : viene aceso il LED giallo
+	 // Postura intermedia : viene aceso il LED giallo ed il motore non viene atttivato
 		  case 1:
 			  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
 			  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
@@ -175,7 +176,8 @@ int main(void)
 			  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, GPIO_PIN_SET);
 			  float fflex_leg_sx = (float)flex_leg_sx;
 			  float fflex_leg_dx = (float)flex_leg_dx;
-			  // Se la postura è scorretta il motore viene attivato per riportare il
+			  // Se la postura è scorretta (vedi nella callback quando flag_motore viene posto ad 1)
+			  // il motore viene attivato per riportare il
 			  // pad in posizione centrale settando il dutycycle al 7.5%
 			  if(flag_motore==1){
 				  __HAL_TIM_SET_COMPARE(&htim10,TIM_CHANNEL_1,23);
@@ -199,8 +201,9 @@ int main(void)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef*htim){
 // This callback is automatically called by the HAL on the UEV event
 	if(htim->Instance == TIM2){
-		uint32_t posizione;
-		uint32_t data[5];
+
+		uint32_t posizione; // ID posizione stimata
+		uint32_t data[5]; // Vettore di dati da inviare tramite UART (4 sensori + ID posizione)
 
 		// I valori dei 6 sensori sono contenuti nel vettore rawValue usando il DMA
 		right = rawValue[0]+1;
@@ -225,7 +228,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef*htim){
 			offset_destra=fflex_leg_dx;
 			offset_sinistra=fflex_leg_sx;
 		}
-		// Cast a float dei valori
+
 		fright = (float)right;
 		fleft = (float)left;
 		fup = (float)up;
@@ -373,7 +376,8 @@ void setCoordinate(float ratio_up,float ratio_down,float ratio_left,float ratio_
 }
 
 // Calcolo l'ID della posizione stimata. E' la somma di due interi : una cifra associata alla
-// zona del barientro ed una per la posizione delle gambe
+// zona del barientro ed una per la posizione delle gambe.
+// Consulta la documentazione per vedere gli ID possibili e le posizioni associate ad essi.
 uint32_t getPosizione(float x,float y,float gamba_destra,float gamba_sinistra){
 	uint32_t zona,gambe;
 	// Controllo della Zona
