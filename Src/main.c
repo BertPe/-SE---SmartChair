@@ -240,7 +240,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef*htim){
 		ratio_right = fright/fleft;
 		ratio_left = fleft/fright;
 
-		// Calcoliamo le coordinate del baricentro : la funzione quindi modicficherà le
+		// Calcoliamo le coordinate del baricentro : la funzione quindi modificherà le
 		// variabili globali x_index e y_index (che sono appunto le coordinate del baricentro)
 		setCoordinate(ratio_up,ratio_down,ratio_left,ratio_right);
 
